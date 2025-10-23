@@ -49,6 +49,8 @@ export default function CashflowCalendar() {
   const [currentMonth, setCurrentMonth] = useState<Date>(startOfMonth(new Date()));
   const monthKey: MonthKey = { year: currentMonth.getUTCFullYear(), month: currentMonth.getUTCMonth() };
   const [data, setData] = useState<CalendarData>({ startingBalance: 0, transactions: [], rules: [] });
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [showTransactionModal, setShowTransactionModal] = useState(false);
 
   useEffect(() => {
     setData(loadMonth(monthKey));
@@ -96,10 +98,20 @@ export default function CashflowCalendar() {
     setData(prev => ({ ...prev, transactions: prev.transactions.filter(t => t.id !== id) }));
   }
 
+  function handleDateClick(dateStr: string) {
+    setSelectedDate(dateStr);
+    setShowTransactionModal(true);
+  }
+
+  function closeTransactionModal() {
+    setShowTransactionModal(false);
+    setSelectedDate(null);
+  }
+
   const monthLabel = new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric", timeZone: "UTC" }).format(currentMonth);
 
   return (
-    <div className="w-full max-w-5xl mx-auto space-y-4">
+    <div className="w-full max-w-6xl mx-auto space-y-4">
       <header className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <button className="px-3 py-2 border rounded" aria-label="Previous month" onClick={() => setCurrentMonth(m => addMonths(m, -1))}>
@@ -123,98 +135,142 @@ export default function CashflowCalendar() {
         </div>
       </header>
 
-      <div className="grid grid-cols-7 gap-2 text-sm">
-        {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map(d => (
-          <div key={d} className="text-center text-gray-500">{d}</div>
-        ))}
-        {Array.from({ length: gridCells }).map((_, idx) => {
-          const day = idx - firstWeekday + 1;
-          if (day < 1 || day > daysInMonth) return <div key={idx} className="h-28 border rounded bg-gray-50" />;
-          const dateStr = isoDate(monthKey.year, monthKey.month, day);
-          const delta = snapshots.find(s => s.date === dateStr)?.dailyDelta ?? 0;
-          const running = snapshots.find(s => s.date === dateStr)?.runningBalance ?? data.startingBalance;
-          const ts = data.transactions.filter(t => t.date === dateStr);
-          return (
-            <div key={idx} className="h-28 border rounded p-2 flex flex-col">
-              <div className="flex items-center justify-between">
-                <span className="font-semibold">{day}</span>
-                <div className="flex gap-1">
-                  <button
-                    className="px-2 py-0.5 border rounded text-green-700"
-                    aria-label={`Add income on ${dateStr}`}
-                    onClick={() => {
-                      const t: Transaction = {
-                        id: `m-${Date.now()}`,
-                        date: dateStr,
-                        type: "income",
-                        amount: 0,
-                        note: "",
-                        source: "manual",
-                      };
-                      setData(prev => ({ ...prev, transactions: [...prev.transactions, t] }));
-                    }}
-                  >
-                    +
-                  </button>
-                  <button
-                    className="px-2 py-0.5 border rounded text-red-700"
-                    aria-label={`Add expense on ${dateStr}`}
-                    onClick={() => {
-                      const t: Transaction = {
-                        id: `m-${Date.now()}`,
-                        date: dateStr,
-                        type: "expense",
-                        amount: 0,
-                        note: "",
-                        source: "manual",
-                      };
-                      setData(prev => ({ ...prev, transactions: [...prev.transactions, t] }));
-                    }}
-                  >
-                    -
-                  </button>
-                </div>
-              </div>
-              <div className="mt-1 flex-1 overflow-auto space-y-1">
-                {ts.map(t => (
-                  <div key={t.id} className="flex items-center gap-1">
-                    <input
-                      type="number"
-                      className="w-20 border rounded px-1 py-0.5"
-                      value={t.amount}
-                      onChange={e => updateTransaction(t.id, { amount: parseFloat(e.target.value || "0") })}
-                      aria-label="Amount"
-                    />
-                    <select
-                      className="border rounded px-1 py-0.5"
-                      value={t.type}
-                      onChange={e => updateTransaction(t.id, { type: e.target.value as Transaction["type"] })}
-                      aria-label="Type"
+      <div className="w-full">
+        <div className="grid grid-cols-7 gap-1 text-sm">
+          {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map(d => (
+            <div key={d} className="text-center text-gray-500 py-2 font-medium">{d}</div>
+          ))}
+        </div>
+        <table className="calendar-table" style={{ 
+          width: '100%',
+          height: '768px',
+          tableLayout: 'fixed',
+          borderCollapse: 'separate',
+          borderSpacing: '4px'
+        }}>
+          <tbody>
+            {Array.from({ length: 6 }).map((_, rowIdx) => (
+              <tr key={rowIdx} style={{ height: '128px' }}>
+                {Array.from({ length: 7 }).map((_, colIdx) => {
+                  const day = rowIdx * 7 + colIdx - firstWeekday + 1;
+                  if (day < 1 || day > daysInMonth) {
+                    return (
+                      <td 
+                        key={`${rowIdx}-${colIdx}`} 
+                        className="border rounded bg-gray-50 calendar-cell" 
+                        style={{ 
+                          height: '128px', 
+                          minHeight: '128px', 
+                          maxHeight: '128px',
+                          overflow: 'hidden',
+                          verticalAlign: 'top',
+                          padding: '0'
+                        }} 
+                      />
+                    );
+                  }
+                  const dateStr = isoDate(monthKey.year, monthKey.month, day);
+                  const delta = snapshots.find(s => s.date === dateStr)?.dailyDelta ?? 0;
+                  const running = snapshots.find(s => s.date === dateStr)?.runningBalance ?? data.startingBalance;
+                  const ts = data.transactions.filter(t => t.date === dateStr);
+                  return (
+                    <td 
+                      key={`${rowIdx}-${colIdx}`} 
+                      className="border rounded bg-white cursor-pointer hover:bg-gray-50 transition-colors calendar-cell"
+                      style={{ 
+                        height: '128px', 
+                        minHeight: '128px', 
+                        maxHeight: '128px',
+                        overflow: 'hidden',
+                        position: 'relative',
+                        verticalAlign: 'top',
+                        padding: '0'
+                      }}
+                      onClick={() => handleDateClick(dateStr)}
                     >
-                      <option value="income">Income</option>
-                      <option value="expense">Expense</option>
-                    </select>
-                    <input
-                      type="text"
-                      className="flex-1 border rounded px-1 py-0.5"
-                      value={t.note ?? ""}
-                      onChange={e => updateTransaction(t.id, { note: e.target.value })}
-                      placeholder="Note"
-                      aria-label="Note"
-                    />
-                    <button className="text-xs text-red-600" onClick={() => deleteTransaction(t.id)} aria-label="Delete">
-                      ✕
-                    </button>
-                  </div>
-                ))}
-              </div>
-              <div className="mt-1 text-xs flex items-center justify-between">
-                <span className={delta >= 0 ? "text-green-700" : "text-red-700"}>{delta >= 0 ? "+" : ""}{delta.toFixed(2)}</span>
-                <span className="text-gray-600">{running.toFixed(2)}</span>
-              </div>
-            </div>
-          );
-        })}
+                      {/* Header with day number and action buttons - absolutely positioned */}
+                      <div 
+                        className="flex items-center justify-between p-2 pb-1 absolute top-0 left-0 right-0 z-10"
+                        style={{ height: '32px' }}
+                      >
+                        <span className="font-semibold text-sm">{day}</span>
+                        <div className="flex gap-1">
+                          <button
+                            className="px-1.5 py-0.5 border rounded text-green-700 text-xs hover:bg-green-50"
+                            aria-label={`Add income on ${dateStr}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const t: Transaction = {
+                                id: `m-${Date.now()}`,
+                                date: dateStr,
+                                type: "income",
+                                amount: 0,
+                                note: "",
+                                source: "manual",
+                              };
+                              setData(prev => ({ ...prev, transactions: [...prev.transactions, t] }));
+                            }}
+                          >
+                            +
+                          </button>
+                          <button
+                            className="px-1.5 py-0.5 border rounded text-red-700 text-xs hover:bg-red-50"
+                            aria-label={`Add expense on ${dateStr}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const t: Transaction = {
+                                id: `m-${Date.now()}`,
+                                date: dateStr,
+                                type: "expense",
+                                amount: 0,
+                                note: "",
+                                source: "manual",
+                              };
+                              setData(prev => ({ ...prev, transactions: [...prev.transactions, t] }));
+                            }}
+                          >
+                            -
+                          </button>
+                        </div>
+                      </div>
+                      
+                      {/* Transaction count display - absolutely positioned center */}
+                      <div 
+                        className="flex items-center justify-center px-2 absolute"
+                        style={{ 
+                          top: '32px',
+                          left: '0',
+                          right: '0',
+                          height: '64px'
+                        }}
+                      >
+                        <div className="text-xs text-gray-600 text-center">
+                          {ts.length > 0 && (
+                            <div className="leading-tight">
+                              <div className="font-medium text-sm">{ts.length}</div>
+                              <div className="text-xs">trans</div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      
+                      {/* Footer with delta and running balance - absolutely positioned bottom */}
+                      <div 
+                        className="text-xs flex items-center justify-between border-t pt-1 px-2 pb-2 absolute bottom-0 left-0 right-0"
+                        style={{ height: '32px' }}
+                      >
+                        <span className={`truncate ${delta >= 0 ? "text-green-700" : "text-red-700"}`}>
+                          {delta >= 0 ? "+" : ""}{delta.toFixed(2)}
+                        </span>
+                        <span className="text-gray-600 truncate ml-1">{running.toFixed(2)}</span>
+                      </div>
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
 
       <footer className="flex items-center justify-between text-sm text-gray-600">
@@ -224,6 +280,130 @@ export default function CashflowCalendar() {
           <button className="px-3 py-2 border rounded" onClick={() => addTransaction("expense")}>Quick add expense</button>
         </div>
       </footer>
+
+      {/* Transaction Modal */}
+      {showTransactionModal && selectedDate && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold">
+                Transactions for {new Date(selectedDate + "T00:00:00Z").toLocaleDateString()}
+              </h3>
+              <button 
+                onClick={closeTransactionModal}
+                className="text-gray-500 hover:text-gray-700 text-xl"
+              >
+                ×
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              {/* Existing Transactions */}
+              <div>
+                <h4 className="font-medium mb-2">Existing Transactions</h4>
+                <div className="space-y-2">
+                  {data.transactions
+                    .filter(t => t.date === selectedDate)
+                    .map(t => (
+                      <div key={t.id} className="flex items-center gap-2 p-2 border rounded">
+                        <input
+                          type="number"
+                          className="w-24 border rounded px-2 py-1"
+                          value={t.amount}
+                          onChange={e => updateTransaction(t.id, { amount: parseFloat(e.target.value || "0") })}
+                          aria-label="Amount"
+                        />
+                        <select
+                          className="border rounded px-2 py-1"
+                          value={t.type}
+                          onChange={e => updateTransaction(t.id, { type: e.target.value as Transaction["type"] })}
+                          aria-label="Type"
+                        >
+                          <option value="income">Income</option>
+                          <option value="expense">Expense</option>
+                        </select>
+                        <input
+                          type="text"
+                          className="flex-1 border rounded px-2 py-1"
+                          value={t.note ?? ""}
+                          onChange={e => updateTransaction(t.id, { note: e.target.value })}
+                          placeholder="Note"
+                          aria-label="Note"
+                        />
+                        <button 
+                          className="text-red-600 hover:bg-red-50 px-2 py-1 rounded" 
+                          onClick={() => deleteTransaction(t.id)} 
+                          aria-label="Delete"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    ))}
+                  {data.transactions.filter(t => t.date === selectedDate).length === 0 && (
+                    <p className="text-gray-500 text-sm">No transactions for this date</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Add New Transaction */}
+              <div>
+                <h4 className="font-medium mb-2">Add New Transaction</h4>
+                <div className="flex gap-2">
+                  <button 
+                    className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+                    onClick={() => {
+                      const t: Transaction = {
+                        id: `m-${Date.now()}`,
+                        date: selectedDate,
+                        type: "income",
+                        amount: 0,
+                        note: "",
+                        source: "manual",
+                      };
+                      setData(prev => ({ ...prev, transactions: [...prev.transactions, t] }));
+                    }}
+                  >
+                    Add Income
+                  </button>
+                  <button 
+                    className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+                    onClick={() => {
+                      const t: Transaction = {
+                        id: `m-${Date.now()}`,
+                        date: selectedDate,
+                        type: "expense",
+                        amount: 0,
+                        note: "",
+                        source: "manual",
+                      };
+                      setData(prev => ({ ...prev, transactions: [...prev.transactions, t] }));
+                    }}
+                  >
+                    Add Expense
+                  </button>
+                </div>
+              </div>
+
+              {/* Daily Summary */}
+              <div className="border-t pt-4">
+                <div className="flex justify-between text-sm">
+                  <span>Daily Total:</span>
+                  <span className={snapshots.find(s => s.date === selectedDate)?.dailyDelta ?? 0 >= 0 ? "text-green-700" : "text-red-700"}>
+                    {snapshots.find(s => s.date === selectedDate)?.dailyDelta ?? 0 >= 0 ? "+" : ""}
+                    {(snapshots.find(s => s.date === selectedDate)?.dailyDelta ?? 0).toFixed(2)}
+                  </span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span>Running Balance:</span>
+                  <span className="font-medium">
+                    {(snapshots.find(s => s.date === selectedDate)?.runningBalance ?? data.startingBalance).toFixed(2)}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

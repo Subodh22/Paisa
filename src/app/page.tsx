@@ -1,28 +1,12 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-
-interface Transaction {
-  id: string;
-  type: 'income' | 'expense';
-  amount: number;
-  note: string;
-  date: string; // YYYY-MM-DD
-  source?: 'manual' | 'recurring' | 'import' | 'bank';
-  _ruleId?: string;
-}
-
-interface RecurringRule {
-  id: string;
-  type: 'income' | 'expense';
-  amount: number;
-  note: string;
-  frequency: 'weekly' | 'fortnightly' | 'monthly';
-  weekday?: number; // 0-6
-  dayOfMonth?: number; // 1-31
-  start: string; // YYYY-MM-DD
-  end?: string; // YYYY-MM-DD
-}
+import { SupabaseStorage } from "./lib/supabaseStorage";
+import { Transaction, RecurringRule } from "./lib/supabase";
+import { useAuth } from "../lib/contexts/AuthContext";
+import { BasiqProvider } from "../lib/contexts/BasiqContext";
+import LoginForm from "../components/LoginForm";
+import BasiqConnection from "../components/BasiqConnection";
 
 interface AppState {
   currentYear: number;
@@ -33,6 +17,7 @@ interface AppState {
 }
 
 export default function Home() {
+  const { user, loading: authLoading, signOut } = useAuth();
   const [state, setState] = useState<AppState>({
     currentYear: new Date().getFullYear(),
     currentMonth: new Date().getMonth(),
@@ -47,6 +32,7 @@ export default function Home() {
   const [recurringForm, setRecurringForm] = useState<Partial<RecurringRule>>({});
   const [showRecurringForm, setShowRecurringForm] = useState(false);
   const [isClient, setIsClient] = useState(false);
+  const [showBasiqConnection, setShowBasiqConnection] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -57,26 +43,50 @@ export default function Home() {
   // Storage helpers
   const STORAGE_KEY = 'cashflow_calendar_v1';
   
-  const loadFromStorage = () => {
+  const loadFromStorage = async () => {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return;
-      const parsed = JSON.parse(raw);
+      // Load from Supabase
+      const [transactions, recurringRules, settings] = await Promise.all([
+        SupabaseStorage.getTransactions(),
+        SupabaseStorage.getRecurringRules(),
+        SupabaseStorage.getAppSettings()
+      ]);
+
       setState(prev => ({
         ...prev,
-        transactions: Array.isArray(parsed.transactions) ? parsed.transactions : [],
-        startingBalanceByMonth: parsed.startingBalanceByMonth || {},
-        recurringRules: Array.isArray(parsed.recurringRules) ? parsed.recurringRules : []
+        transactions: Array.isArray(transactions) ? transactions : [],
+        recurringRules: Array.isArray(recurringRules) ? recurringRules : [],
+        startingBalanceByMonth: settings?.startingBalanceByMonth || prev.startingBalanceByMonth,
+        currentYear: settings?.currentYear || prev.currentYear,
+        currentMonth: settings?.currentMonth || prev.currentMonth
       }));
-    } catch {}
+    } catch (error) {
+      console.error('Failed to load data from Supabase:', error);
+      // Fallback to localStorage if Supabase fails
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return;
+        const parsed = JSON.parse(raw);
+        setState(prev => ({
+          ...prev,
+          transactions: Array.isArray(parsed.transactions) ? parsed.transactions : [],
+          startingBalanceByMonth: parsed.startingBalanceByMonth || {},
+          recurringRules: Array.isArray(parsed.recurringRules) ? parsed.recurringRules : []
+        }));
+      } catch {}
+    }
   };
 
-  const saveToStorage = () => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({
-      transactions: state.transactions,
-      startingBalanceByMonth: state.startingBalanceByMonth,
-      recurringRules: state.recurringRules,
-    }));
+  const saveToStorage = async () => {
+    try {
+      await SupabaseStorage.saveAppSettings({
+        currentYear: state.currentYear,
+        currentMonth: state.currentMonth,
+        startingBalanceByMonth: state.startingBalanceByMonth
+      });
+    } catch (error) {
+      console.error('Failed to save settings to Supabase:', error);
+    }
   };
 
   useEffect(() => {
@@ -84,8 +94,10 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    saveToStorage();
-  }, [state]);
+    if (isClient) {
+      saveToStorage();
+    }
+  }, [state.currentYear, state.currentMonth, state.startingBalanceByMonth]);
 
   // Utilities
   const pad = (n: number) => String(n).padStart(2, '0');
@@ -249,7 +261,7 @@ export default function Home() {
     setEditingTransaction(null);
   };
 
-  const saveTransaction = (formData: FormData) => {
+  const saveTransaction = async (formData: FormData) => {
     const id = formData.get('id') as string || crypto.randomUUID();
     const type = formData.get('type') as 'income' | 'expense';
     const amount = Math.max(0, Number(formData.get('amount') || 0));
@@ -258,23 +270,46 @@ export default function Home() {
     
     if (!date || !amount) return;
     
-    const transaction: Transaction = { id, type, amount, note, date };
+    const transactionData = { type, amount, note, date, source: 'manual' as const };
     
-    setState(prev => ({
-      ...prev,
-      transactions: prev.transactions.find(t => t.id === id)
-        ? prev.transactions.map(t => t.id === id ? transaction : t)
-        : [...prev.transactions, transaction]
-    }));
+    try {
+      let savedTransaction: Transaction | null = null;
+      
+      if (id && state.transactions.find(t => t.id === id)) {
+        // Update existing transaction
+        savedTransaction = await SupabaseStorage.updateTransaction(id, transactionData);
+      } else {
+        // Create new transaction
+        savedTransaction = await SupabaseStorage.saveTransaction(transactionData);
+      }
+      
+      if (savedTransaction) {
+        setState(prev => ({
+          ...prev,
+          transactions: prev.transactions.find(t => t.id === id)
+            ? prev.transactions.map(t => t.id === id ? savedTransaction! : t)
+            : [...prev.transactions, savedTransaction!]
+        }));
+      }
+    } catch (error) {
+      console.error('Failed to save transaction:', error);
+    }
     
     closeTransactionDialog();
   };
 
-  const deleteTransaction = (id: string) => {
-    setState(prev => ({
-      ...prev,
-      transactions: prev.transactions.filter(t => t.id !== id)
-    }));
+  const deleteTransaction = async (id: string) => {
+    try {
+      const success = await SupabaseStorage.deleteTransaction(id);
+      if (success) {
+        setState(prev => ({
+          ...prev,
+          transactions: prev.transactions.filter(t => t.id !== id)
+        }));
+      }
+    } catch (error) {
+      console.error('Failed to delete transaction:', error);
+    }
     closeTransactionDialog();
   };
 
@@ -288,21 +323,21 @@ export default function Home() {
     }));
   };
 
-  const exportData = () => {
-    const data = {
-      transactions: state.transactions,
-      startingBalanceByMonth: state.startingBalanceByMonth,
-      recurringRules: state.recurringRules,
-    };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `cashflow-export-${Date.now()}.json`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
+  const exportData = async () => {
+    try {
+      const data = await SupabaseStorage.exportData();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `cashflow-export-${Date.now()}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Failed to export data:', error);
+    }
   };
 
   const importCSV = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -310,7 +345,7 @@ export default function Home() {
     if (!file) return;
     
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       const text = e.target?.result as string;
       // Simple CSV parsing - you can enhance this
       const lines = text.split('\n');
@@ -326,21 +361,31 @@ export default function Home() {
         const note = values[2]?.trim() || '';
         
         if (date && amount) {
-          imported.push({
-            id: crypto.randomUUID(),
-            type: amount < 0 ? 'expense' : 'income',
-            amount: Math.abs(amount),
-            note,
-            date,
-            source: 'import'
-          });
+        const transactionData = {
+          type: (amount < 0 ? 'expense' : 'income') as 'income' | 'expense',
+          amount: Math.abs(amount),
+          note,
+          date,
+          source: 'import' as const
+        };
+          
+          try {
+            const savedTransaction = await SupabaseStorage.saveTransaction(transactionData);
+            if (savedTransaction) {
+              imported.push(savedTransaction);
+            }
+          } catch (error) {
+            console.error('Failed to save imported transaction:', error);
+          }
         }
       }
       
-      setState(prev => ({
-        ...prev,
-        transactions: [...prev.transactions, ...imported]
-      }));
+      if (imported.length > 0) {
+        setState(prev => ({
+          ...prev,
+          transactions: [...prev.transactions, ...imported]
+        }));
+      }
     };
     reader.readAsText(file);
   };
@@ -395,65 +440,20 @@ export default function Home() {
       
       runningBalance += dayDelta;
 
+      // Determine cell color based on daily delta
+      const cellColorClass = dayDelta > 0 ? 'day-income' : dayDelta < 0 ? 'day-expense' : 'day-neutral';
+      
       days.push(
-        <div key={day} className="day-cell">
+        <div key={day} className={`day-cell ${cellColorClass}`} onClick={() => openTransactionDialog({ date: dateStr })}>
           <div className="day-header">
             <div className="day-number">{day}</div>
-            <div className="day-actions">
-              <button 
-                className="day-action income"
-                onClick={() => openTransactionDialog({ date: dateStr, type: 'income' })}
-                title="Add income"
-              >
-                +
-              </button>
-              <button 
-                className="day-action expense"
-                onClick={() => openTransactionDialog({ date: dateStr, type: 'expense' })}
-                title="Add expense"
-              >
-                -
-              </button>
-            </div>
           </div>
           
           <div className="day-content">
-            {txns.map(t => (
-              <div 
-                key={t.id} 
-                className={`txn ${t.type}`}
-              >
-                <div 
-                  className="txn-content"
-                  onClick={() => t.source === 'recurring' ? openRecurringForEdit(t._ruleId!) : openTransactionDialog(t)}
-                >
-                  <div className="note">{t.note || (t.type === 'income' ? 'Income' : 'Expense')}</div>
-                  <div className="amount">
-                    {(t.type === 'expense' ? '-' : '+') + formatMoney(Math.abs(Number(t.amount)))}
-                  </div>
-                </div>
-                {t.source !== 'recurring' && (
-                  <button 
-                    className="txn-delete"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (confirm('Delete this transaction?')) {
-                        deleteTransaction(t.id);
-                      }
-                    }}
-                    title="Delete transaction"
-                  >
-                    ✕
-                  </button>
-                )}
-              </div>
-            ))}
+            {/* Clean empty space - no transaction details */}
           </div>
           
           <div className="day-footer">
-            <div className={`daily-delta ${dayDelta >= 0 ? 'positive' : 'negative'}`}>
-              {dayDelta === 0 ? '' : `${dayDelta > 0 ? '+' : ''}${formatMoney(dayDelta)}`}
-            </div>
             <div className="day-balance">{formatMoney(runningBalance)}</div>
           </div>
         </div>
@@ -479,7 +479,7 @@ export default function Home() {
     }
   };
 
-  const saveRecurringRule = (formData: FormData) => {
+  const saveRecurringRule = async (formData: FormData) => {
     const id = formData.get('id') as string || crypto.randomUUID();
     const type = formData.get('type') as 'income' | 'expense';
     const amount = Math.max(0, Number(formData.get('amount') || 0));
@@ -492,37 +492,87 @@ export default function Home() {
     
     if (!amount || !start) return;
     
-    const rule: RecurringRule = { id, type, amount, note, frequency, start, end };
-    if (frequency === 'weekly') rule.weekday = weekday;
-    if (frequency === 'monthly') rule.dayOfMonth = dayOfMonth ?? 1;
+    const ruleData = { type, amount, note, frequency, start, end, weekday, dayOfMonth };
     
-    setState(prev => ({
-      ...prev,
-      recurringRules: prev.recurringRules.find(r => r.id === id)
-        ? prev.recurringRules.map(r => r.id === id ? rule : r)
-        : [...prev.recurringRules, rule]
-    }));
+    try {
+      let savedRule: RecurringRule | null = null;
+      
+      if (id && state.recurringRules.find(r => r.id === id)) {
+        // Update existing rule
+        savedRule = await SupabaseStorage.updateRecurringRule(id, ruleData);
+      } else {
+        // Create new rule
+        savedRule = await SupabaseStorage.saveRecurringRule(ruleData);
+      }
+      
+      if (savedRule) {
+        setState(prev => ({
+          ...prev,
+          recurringRules: prev.recurringRules.find(r => r.id === id)
+            ? prev.recurringRules.map(r => r.id === id ? savedRule! : r)
+            : [...prev.recurringRules, savedRule!]
+        }));
+      }
+    } catch (error) {
+      console.error('Failed to save recurring rule:', error);
+    }
     
     setRecurringForm({});
     setShowRecurringForm(false);
   };
 
-  const deleteRecurringRule = (id: string) => {
-    setState(prev => ({
-      ...prev,
-      recurringRules: prev.recurringRules.filter(r => r.id !== id)
-    }));
+  const deleteRecurringRule = async (id: string) => {
+    try {
+      const success = await SupabaseStorage.deleteRecurringRule(id);
+      if (success) {
+        setState(prev => ({
+          ...prev,
+          recurringRules: prev.recurringRules.filter(r => r.id !== id)
+        }));
+      }
+    } catch (error) {
+      console.error('Failed to delete recurring rule:', error);
+    }
   };
 
   const { days, startingBalance, monthTotals } = renderCalendar();
   const endBalance = startingBalance + monthTotals.income - monthTotals.expense;
 
+  // Show loading while checking authentication
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-indigo-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show login form if not authenticated
+  if (!user) {
+    return <LoginForm />;
+  }
+
   return (
-    <div className="min-h-screen bg-white">
+    <BasiqProvider>
+      <div className="min-h-screen bg-white">
       <header className="app-header">
         <div className="max-w-6xl mx-auto">
           <div className="flex items-center justify-between mb-4">
             <h1 className="text-2xl font-bold">Cashflow Calendar</h1>
+            <div className="flex items-center gap-4">
+              <div className="text-sm text-gray-600">
+                Welcome, {user.email}
+              </div>
+              <button
+                onClick={signOut}
+                className="px-3 py-2 text-sm bg-red-100 text-red-700 rounded hover:bg-red-200"
+              >
+                Sign Out
+              </button>
+            </div>
             <div className="flex items-center gap-2">
               <button 
                 onClick={() => navigateMonth(-1)}
@@ -562,21 +612,37 @@ export default function Home() {
               <button onClick={saveStartingBalance} className="px-3 py-1 border rounded bg-gray-100">Save</button>
             </div>
             <div className="flex gap-2">
-              <button className="px-3 py-1 border rounded bg-gray-100">Connect (Basiq)</button>
-              <button className="px-3 py-1 border rounded bg-gray-100">Fetch (90d)</button>
+              <button 
+                onClick={() => setShowBasiqConnection(!showBasiqConnection)}
+                className="px-3 py-1 border rounded bg-gray-100 hover:bg-gray-200"
+              >
+                {showBasiqConnection ? 'Hide' : 'Connect'} Basiq
+              </button>
               <button 
                 onClick={() => fileInputRef.current?.click()}
-                className="px-3 py-1 border rounded bg-gray-100"
+                className="px-3 py-1 border rounded bg-gray-100 hover:bg-gray-200"
               >
                 Import CSV
               </button>
-              <button onClick={exportData} className="px-3 py-1 border rounded bg-gray-100">Export JSON</button>
+              <button onClick={exportData} className="px-3 py-1 border rounded bg-gray-100 hover:bg-gray-200">Export JSON</button>
             </div>
           </div>
         </div>
       </header>
 
       <main className="app-main">
+        {/* Basiq Connection Panel */}
+        {showBasiqConnection && (
+          <div className="mb-6">
+            <BasiqConnection 
+              onTransactionsImported={(count) => {
+                console.log(`Imported ${count} transactions from Basiq`);
+                // Reload data to show new transactions
+                loadFromStorage();
+              }} 
+            />
+          </div>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 max-w-full">
           {/* Calendar Section */}
@@ -898,6 +964,7 @@ export default function Home() {
           </div>
         </div>
       </footer>
-    </div>
+      </div>
+    </BasiqProvider>
   );
 }

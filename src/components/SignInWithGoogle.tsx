@@ -3,7 +3,7 @@
 import { useAuth } from '../lib/hooks/useAuth';
 
 export default function SignInWithGoogle() {
-  const { signInWithGoogle } = useAuth();
+  const { signInWithGoogle } = useAuth() || {};
 
   return (
     <button

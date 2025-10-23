@@ -20,6 +20,8 @@
   --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
   --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
   --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+  /* Calendar cell height (responsive via media queries) */
+  --calendar-cell-height: 160px;
 }
 
 * {
@@ -203,6 +205,50 @@ input::placeholder {
   box-shadow: var(--shadow);
 }
 
+.calendar-table {
+  width: 100% !important;
+  height: 768px !important;
+  table-layout: fixed !important;
+  border-collapse: separate !important;
+  border-spacing: 4px !important;
+}
+
+.calendar-table tr {
+  height: 128px !important;
+  min-height: 128px !important;
+  max-height: 128px !important;
+}
+
+.calendar-table td {
+  height: 128px !important;
+  min-height: 128px !important;
+  max-height: 128px !important;
+  overflow: hidden !important;
+  position: relative !important;
+  vertical-align: top !important;
+  padding: 0 !important;
+  box-sizing: border-box !important;
+  width: 14.28% !important; /* 100% / 7 columns */
+}
+
+.calendar-cell {
+  height: 128px !important;
+  min-height: 128px !important;
+  max-height: 128px !important;
+  overflow: hidden !important;
+  position: relative !important;
+  vertical-align: top !important;
+  padding: 0 !important;
+  box-sizing: border-box !important;
+}
+
+.calendar-cell > * {
+  position: absolute !important;
+  box-sizing: border-box !important;
+  max-height: 100% !important;
+  overflow: hidden !important;
+}
+
 .weekday-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
@@ -223,18 +269,25 @@ input::placeholder {
 .days-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
+  /* Ensure every row is a fixed height */
+  grid-auto-rows: var(--calendar-cell-height);
   gap: 1px;
   background: var(--border);
 }
 
 .day-cell {
   background: var(--surface);
-  min-height: 120px;
-  padding: 0.75rem;
+  /* Lock each cell height using variable so all cells match */
+  height: var(--calendar-cell-height);
+  min-height: var(--calendar-cell-height);
+  max-height: var(--calendar-cell-height);
+  overflow: hidden;
+  padding: 0.5rem;
   display: flex;
   flex-direction: column;
   transition: all 0.2s ease;
   position: relative;
+  cursor: pointer;
 }
 
 .day-cell:hover {
@@ -246,11 +299,40 @@ input::placeholder {
   border: 1px solid rgba(59, 130, 246, 0.2);
 }
 
+/* Color coding for income/expense days */
+.day-income {
+  background: rgba(16, 185, 129, 0.1) !important;
+  border-left: 3px solid var(--success);
+}
+
+.day-income:hover {
+  background: rgba(16, 185, 129, 0.15) !important;
+}
+
+.day-expense {
+  background: rgba(239, 68, 68, 0.1) !important;
+  border-left: 3px solid var(--danger);
+}
+
+.day-expense:hover {
+  background: rgba(239, 68, 68, 0.15) !important;
+}
+
+.day-neutral {
+  background: var(--surface);
+}
+
+.day-neutral:hover {
+  background: var(--surface-hover);
+}
+
 .day-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   margin-bottom: 0.5rem;
+  /* Fixed header height to keep layout stable */
+  flex: 0 0 24px;
 }
 
 .day-number {
@@ -293,10 +375,12 @@ input::placeholder {
 
 /* Transactions */
 .day-content {
-  flex: 1;
+  /* Middle area takes remaining space and scrolls if needed */
+  flex: 1 1 auto;
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
+  overflow-y: auto;
 }
 
 .txn {
@@ -364,6 +448,17 @@ input::placeholder {
   background: rgba(239, 68, 68, 0.1);
 }
 
+/* Transaction count display */
+.transaction-count {
+  text-align: center;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  padding: 0.25rem;
+  background: var(--surface-hover);
+  border-radius: 0.25rem;
+  margin: 0.25rem 0;
+}
+
 /* Day Summary */
 .day-summary {
   margin-top: 0.5rem;
@@ -390,6 +485,22 @@ input::placeholder {
 .running-balance {
   color: var(--text-muted);
   font-size: 0.75rem;
+}
+
+/* Footer for day cells used by page.tsx */
+.day-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: auto;
+  /* Fixed footer height to maintain total cell height */
+  flex: 0 0 24px;
+  font-size: 0.75rem;
+}
+
+.day-balance {
+  font-weight: 600;
+  color: var(--text-primary);
 }
 
 /* Forms */
@@ -509,10 +620,9 @@ dialog {
     justify-content: center;
   }
   
-  .day-cell {
-    min-height: 100px;
-    padding: 0.5rem;
-  }
+  /* Slightly smaller cells on small screens while keeping uniform height */
+  :root { --calendar-cell-height: 120px; }
+  .day-cell { padding: 0.5rem; }
   
   .form-grid {
     grid-template-columns: 1fr;
@@ -521,4 +631,9 @@ dialog {
   .dialog-actions {
     flex-direction: column;
   }
+}
+
+/* Medium screens: slightly reduce cell height for responsiveness */
+@media (max-width: 1024px) and (min-width: 769px) {
+  :root { --calendar-cell-height: 140px; }
 }

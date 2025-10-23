@@ -1,30 +1,30 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useDeepgram } from '../lib/contexts/DeepgramContext';
-import { addDocument } from '../lib/firebase/firebaseUtils';
+// import { useDeepgram } from '../lib/contexts/DeepgramContext';
+// import { addDocument } from '../lib/firebase/firebaseUtils';
 import { motion } from 'framer-motion';
 
 export default function VoiceRecorder() {
   const [isRecording, setIsRecording] = useState(false);
-  const { connectToDeepgram, disconnectFromDeepgram, connectionState, realtimeTranscript } = useDeepgram();
+  // const { connectToDeepgram, disconnectFromDeepgram, connectionState, realtimeTranscript } = useDeepgram();
 
   const handleStartRecording = async () => {
-    await connectToDeepgram();
+    // await connectToDeepgram();
     setIsRecording(true);
   };
 
   const handleStopRecording = async () => {
-    disconnectFromDeepgram();
+    // disconnectFromDeepgram();
     setIsRecording(false);
     
     // Save the note to Firebase
-    if (realtimeTranscript) {
-      await addDocument('notes', {
-        text: realtimeTranscript,
-        timestamp: new Date().toISOString(),
-      });
-    }
+    // if (realtimeTranscript) {
+    //   await addDocument('notes', {
+    //     text: realtimeTranscript,
+    //     timestamp: new Date().toISOString(),
+    //   });
+    // }
   };
 
   return (
@@ -50,7 +50,7 @@ export default function VoiceRecorder() {
             }}
             className="w-8 h-8 bg-blue-500 rounded-full mx-auto mb-4"
           />
-          <p className="text-sm text-gray-600">{realtimeTranscript}</p>
+          <p className="text-sm text-gray-600">{/* realtimeTranscript */}</p>
         </div>
       )}
     </div>

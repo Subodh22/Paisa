@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { SupabaseStorage } from "./lib/supabaseStorage";
 import { Transaction, RecurringRule } from "./lib/supabase";
 import { useAuth } from "../lib/contexts/AuthContext";
@@ -77,7 +77,7 @@ export default function Home() {
     }
   };
 
-  const saveToStorage = async () => {
+  const saveToStorage = useCallback(async () => {
     try {
       await SupabaseStorage.saveAppSettings({
         currentYear: state.currentYear,
@@ -87,7 +87,7 @@ export default function Home() {
     } catch (error) {
       console.error('Failed to save settings to Supabase:', error);
     }
-  };
+  }, [state.currentYear, state.currentMonth, state.startingBalanceByMonth]);
 
   useEffect(() => {
     loadFromStorage();
@@ -97,7 +97,7 @@ export default function Home() {
     if (isClient) {
       saveToStorage();
     }
-  }, [isClient, saveToStorage, state.currentYear, state.currentMonth, state.startingBalanceByMonth]);
+  }, [isClient, saveToStorage]);
 
   // Utilities
   const pad = (n: number) => String(n).padStart(2, '0');

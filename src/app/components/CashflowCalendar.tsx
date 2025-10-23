@@ -47,7 +47,10 @@ function computeSnapshots(
 
 export default function CashflowCalendar() {
   const [currentMonth, setCurrentMonth] = useState<Date>(startOfMonth(new Date()));
-  const monthKey: MonthKey = { year: currentMonth.getUTCFullYear(), month: currentMonth.getUTCMonth() };
+  const monthKey: MonthKey = useMemo(() => ({ 
+    year: currentMonth.getUTCFullYear(), 
+    month: currentMonth.getUTCMonth() 
+  }), [currentMonth]);
   const [data, setData] = useState<CalendarData>({ startingBalance: 0, transactions: [], rules: [] });
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [showTransactionModal, setShowTransactionModal] = useState(false);

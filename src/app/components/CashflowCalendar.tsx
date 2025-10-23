@@ -54,11 +54,11 @@ export default function CashflowCalendar() {
 
   useEffect(() => {
     setData(loadMonth(monthKey));
-  }, [monthKey.year, monthKey.month]);
+  }, [monthKey]);
 
   useEffect(() => {
     saveMonth(monthKey, data);
-  }, [monthKey.year, monthKey.month, data]);
+  }, [monthKey, data]);
 
   const snapshots = useMemo(
     () => computeSnapshots(data, monthKey.year, monthKey.month),

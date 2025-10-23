@@ -97,7 +97,7 @@ export default function Home() {
     if (isClient) {
       saveToStorage();
     }
-  }, [state.currentYear, state.currentMonth, state.startingBalanceByMonth]);
+  }, [isClient, saveToStorage, state.currentYear, state.currentMonth, state.startingBalanceByMonth]);
 
   // Utilities
   const pad = (n: number) => String(n).padStart(2, '0');

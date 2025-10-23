@@ -36,6 +36,7 @@ export interface RecurringRule {
   dayOfMonth?: number
   start: string
   end?: string
+  active: boolean
   created_at?: string
   updated_at?: string
 }

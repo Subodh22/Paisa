@@ -16,8 +16,8 @@ export function generateOccurrencesForMonth(
 
   for (const rule of rules) {
     if (!rule.active) continue;
-    const ruleStart = new Date(rule.startDate + "T00:00:00Z");
-    const ruleEnd = rule.endDate ? new Date(rule.endDate + "T00:00:00Z") : undefined;
+    const ruleStart = new Date(rule.start + "T00:00:00Z");
+    const ruleEnd = rule.end ? new Date(rule.end + "T00:00:00Z") : undefined;
     if (ruleEnd && ruleEnd < start) continue;
     if (ruleStart > end) continue;
 
@@ -50,11 +50,11 @@ export function generateOccurrencesForMonth(
       // Fast-forward to align with rule start and fortnight cadence if needed
       const interval = rule.frequency === "weekly" ? 7 : 14;
 
-      // Align to the first occurrence >= ruleStart that matches the cadence from rule.startDate
+      // Align to the first occurrence >= ruleStart that matches the cadence from rule.start
       while (current < start) {
         current.setUTCDate(current.getUTCDate() + 7);
       }
-      // Ensure cadence: distance from rule.startDate in days is multiple of interval
+      // Ensure cadence: distance from rule.start in days is multiple of interval
       while (current <= end) {
         const currentDateStr = isoDate(current.getUTCFullYear(), current.getUTCMonth(), current.getUTCDate());
         const currentDateObj = new Date(currentDateStr + "T00:00:00Z");

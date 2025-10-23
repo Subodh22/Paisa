@@ -87,6 +87,7 @@ export class SupabaseStorage {
       dayOfMonth: rule.day_of_month,
       start: rule.start_date,
       end: rule.end_date,
+      active: rule.active ?? true,
       created_at: rule.created_at,
       updated_at: rule.updated_at
     }))
@@ -106,7 +107,8 @@ export class SupabaseStorage {
       weekday: rule.weekday,
       day_of_month: rule.dayOfMonth,
       start_date: rule.start,
-      end_date: rule.end
+      end_date: rule.end,
+      active: rule.active ?? true
     }
 
     const { data, error } = await supabase

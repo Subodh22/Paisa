@@ -137,6 +137,7 @@ export default function Home() {
     const occurrences: Transaction[] = [];
     
     for (const r of state.recurringRules) {
+      if (!r.active) continue;
       const start = r.start;
       const end = r.end || undefined;
       
@@ -492,7 +493,7 @@ export default function Home() {
     
     if (!amount || !start) return;
     
-    const ruleData = { type, amount, note, frequency, start, end, weekday, dayOfMonth };
+    const ruleData = { type, amount, note, frequency, start, end, weekday, dayOfMonth, active: true };
     
     try {
       let savedRule: RecurringRule | null = null;
